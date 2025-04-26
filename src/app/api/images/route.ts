@@ -1,11 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
+import {AzureOpenAI} from 'openai';
+
 import fs from 'fs/promises';
 import path from 'path';
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+const openai = new AzureOpenAI(
+  {
+    endpoint: process.env.AZURE_OPENAI_ENDPOINT,
+    apiKey: process.env.AZURE_OPENAI_API_KEY,
+    apiVersion: process.env.AZURE_OPENAI_API_VERSION,
+    deployment: process.env.AZURE_OPENAI_DEPLOYMENT_NAME
+  });
 
 const outputDir = path.resolve(process.cwd(), 'generated-images');
 
@@ -31,7 +37,7 @@ async function ensureOutputDirExists() {
 export async function POST(request: NextRequest) {
   console.log('Received POST request to /api/images');
 
-  if (!process.env.OPENAI_API_KEY) {
+  if (!process.env.AZURE_OPENAI_API_KEY) {
     console.error('OPENAI_API_KEY is not set.');
     return NextResponse.json(
       { error: 'Server configuration error: API key not found.' },
@@ -70,7 +76,7 @@ export async function POST(request: NextRequest) {
       const params: OpenAI.Images.ImageGenerateParams = {
         model,
         prompt,
-        n: Math.max(1, Math.min(n || 1, 10)), 
+        n: Math.max(1, Math.min(n || 1, 10)),
         size,
         quality,
         output_format,
@@ -79,10 +85,10 @@ export async function POST(request: NextRequest) {
       };
 
       if ((output_format === 'jpeg' || output_format === 'webp') && output_compression_str) {
-         const compression = parseInt(output_compression_str, 10);
-         if (!isNaN(compression) && compression >= 0 && compression <= 100) {
-            params.output_compression = compression;
-         }
+        const compression = parseInt(output_compression_str, 10);
+        if (!isNaN(compression) && compression >= 0 && compression <= 100) {
+          params.output_compression = compression;
+        }
       }
 
       console.log('Calling OpenAI generate with params:', params);
@@ -93,7 +99,7 @@ export async function POST(request: NextRequest) {
       const size = formData.get('size') as OpenAI.Images.ImageEditParams['size'] || 'auto';
       const quality = formData.get('quality') as OpenAI.Images.ImageEditParams['quality'] || 'auto';
 
-      
+
       const imageFiles: File[] = [];
       for (const [key, value] of formData.entries()) {
         if (key.startsWith('image_') && value instanceof File) {
@@ -112,8 +118,8 @@ export async function POST(request: NextRequest) {
         prompt,
         image: imageFiles,
         n: Math.max(1, Math.min(n || 1, 10)),
-        size: size === 'auto' ? undefined : size, 
-        quality: quality === 'auto' ? undefined : quality, 
+        size: size === 'auto' ? undefined : size,
+        quality: quality === 'auto' ? undefined : quality,
       };
 
       if (maskFile) {
@@ -121,9 +127,9 @@ export async function POST(request: NextRequest) {
       }
 
       console.log('Calling OpenAI edit with params:', {
-          ...params,
-          image: `[${imageFiles.map(f => f.name).join(', ')}]`, 
-          mask: maskFile ? maskFile.name : 'N/A'
+        ...params,
+        image: `[${imageFiles.map(f => f.name).join(', ')}]`,
+        mask: maskFile ? maskFile.name : 'N/A'
       });
       result = await openai.images.edit(params);
 
@@ -133,7 +139,7 @@ export async function POST(request: NextRequest) {
 
     console.log('OpenAI API call successful.');
 
-    
+
     if (!result || !Array.isArray(result.data) || result.data.length === 0) {
       console.error('Invalid or empty data received from OpenAI API:', result);
       return NextResponse.json(
@@ -150,7 +156,7 @@ export async function POST(request: NextRequest) {
         }
         const buffer = Buffer.from(imageData.b64_json, 'base64');
         const timestamp = Date.now();
-        
+
         const fileExtension = formData.get('output_format') as string || 'png';
         const filename = `${timestamp}-${index}.${fileExtension}`;
         const filepath = path.join(outputDir, filename);
@@ -161,14 +167,14 @@ export async function POST(request: NextRequest) {
 
         return {
           b64_json: imageData.b64_json,
-          path: `/generated-images/${filename}`, 
+          path: `/generated-images/${filename}`,
           filename: filename,
         };
       })
     );
 
     console.log('All images processed and saved.');
-    
+
     return NextResponse.json({ images: savedImagesData, usage: result.usage });
 
   } catch (error: unknown) {
@@ -183,12 +189,12 @@ export async function POST(request: NextRequest) {
         status = error.status;
       }
     } else if (typeof error === 'object' && error !== null) {
-        if ('message' in error && typeof error.message === 'string') {
-            errorMessage = error.message;
-        }
-        if ('status' in error && typeof error.status === 'number') {
-            status = error.status;
-        }
+      if ('message' in error && typeof error.message === 'string') {
+        errorMessage = error.message;
+      }
+      if ('status' in error && typeof error.status === 'number') {
+        status = error.status;
+      }
     }
 
     return NextResponse.json({ error: errorMessage }, { status });
